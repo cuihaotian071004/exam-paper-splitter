@@ -1,0 +1,30 @@
+# Logs
+logs/
+*.log
+
+# Planning files
+.hermes/
+
+# Temp/backup files
+_*.py
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# System
+.DS_Store
+Thumbs.db
+*.bak
+*.backup
