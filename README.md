@@ -99,7 +99,7 @@ pip install PyMuPDF tkinterdnd2
 ```
 exam-paper-splitter/
 ├── 试卷分割工具.pyw    # GUI 主程序 (Tkinter)
-├── core.py             # 核心处理逻辑 (v3.1.0)
+├── core.py             # 核心处理逻辑 (v3.1.1)
 ├── lo_convert.py       # LibreOffice UNO 转换脚本
 ├── 试卷分割工具.bat     # 启动脚本
 ├── .gitignore

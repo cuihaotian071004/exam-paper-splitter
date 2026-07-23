@@ -35,80 +35,6 @@ _file_logger = _setup_file_logger()
 MAX_PREVIEW = 200
 THUMB_W, THUMB_H = 90, 120
 
-# ═══════════════════════════════════════════════════════════
-#  Startup Init Dialog
-# ═══════════════════════════════════════════════════════════
-
-class InitDialog:
-    """启动时初始化 LibreOffice 的进度对话框。"""
-    def __init__(self, master, on_complete):
-        self.master = master
-        self.on_complete = on_complete
-        self.win = tk.Toplevel(master)
-        self.win.title("初始化")
-        self.win.geometry("400x200")
-        self.win.resizable(False, False)
-        self.win.configure(bg="#f8f9fa")
-        self.win.transient(master)
-        self.win.grab_set()
-        self.win.protocol("WM_DELETE_WINDOW", self._skip)
-        self._build_ui()
-        self._center()
-        threading.Thread(target=self._do_init, daemon=True).start()
-
-    def _build_ui(self):
-        title = tk.Label(self.win, text="试卷分割工具", font=("Microsoft YaHei", 16, "bold"),
-                         bg="#f8f9fa", fg="#2c3e50")
-        title.pack(pady=(25, 5))
-        self.status = tk.Label(self.win, text="正在检测环境...", font=("Microsoft YaHei", 10),
-                               bg="#f8f9fa", fg="#7f8c8d")
-        self.status.pack(pady=(5, 15))
-        self.progress = ttk.Progressbar(self.win, mode="indeterminate", length=300)
-        self.progress.pack(pady=(0, 10))
-        self.progress.start(15)
-        self.skip_btn = tk.Button(self.win, text="跳过初始化", font=("Microsoft YaHei", 9),
-                                  command=self._skip, bg="#ecf0f1", fg="#7f8c8d",
-                                  relief=tk.FLAT, cursor="hand2")
-        self.skip_btn.pack(pady=(5, 0))
-
-    def _center(self):
-        self.win.update_idletasks()
-        w, h = self.win.winfo_width(), self.win.winfo_height()
-        sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
-        self.win.geometry("+%d+%d" % ((sw - w) // 2, (sh - h) // 2))
-
-    def _callback(self, status, msg):
-        def update():
-            if status == "progress":
-                self.status.config(text=msg)
-            elif status == "done":
-                self.progress.stop()
-                self.progress.config(mode="determinate", value=100)
-                self.status.config(text="就绪 - " + msg, fg="#27ae60")
-                self.skip_btn.config(text="开始使用", bg="#3498db", fg="white",
-                                     command=self._close)
-            elif status == "error":
-                self.progress.stop()
-                self.progress.config(mode="determinate", value=100)
-                self.status.config(text="初始化失败，可使用降级模式", fg="#e67e22")
-                self.skip_btn.config(text="继续", bg="#3498db", fg="white",
-                                     command=self._close)
-        self.win.after(0, update)
-
-    def _do_init(self):
-        _core_mod._init_listener(self._callback)
-
-    def _skip(self):
-        self._close()
-
-    def _close(self):
-        try:
-            self.win.destroy()
-        except:
-            pass
-        if self.on_complete:
-            self.win.after(10, self.on_complete)
-
 
 # ═══════════════════════════════════════════════════════════
 #  Thumbnail pre-loader
@@ -353,21 +279,48 @@ class SplitDialog:
 class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("试卷分割工具 v3.1")
+        self.title("试卷分割工具 v3.1.1")
         self.geometry("620x620")
         self.minsize(550, 520)
         self.configure(bg="#f8f9fa")
         self.mode = "qa"
-        self._init_done = False
+        self._lo_ready = False  # LO 引擎是否就绪
 
-        # 先构建界面（隐藏），再初始化 LO，最后显示
         self._build_ui()
-        self.withdraw()  # 先隐藏，等初始化完再显示
-        self.after(50, self._start_init)
+        # 主窗口直接显示，LO 引擎后台静默初始化，状态栏实时反馈
+        self.progress.start(10)
+        self.status.config(text="LO 引擎初始化中...", fg="#e67e22")
+        threading.Thread(target=self._init_lo_bg, daemon=True).start()
+
+    def _init_lo_bg(self):
+        """后台初始化 LO 监听器，通过 after 更新状态栏。"""
+        def update_status(st, msg):
+            """线程安全的 UI 更新。"""
+            def _upd():
+                if st == "done":
+                    self._lo_ready = True
+                    self.progress.stop()
+                    self.status.config(text="就绪，拖入文件或点击选择", fg="#27ae60")
+                    self.log_msg("LO 引擎就绪")
+                elif st == "error":
+                    self.progress.stop()
+                    self.status.config(text="备用模式: 就绪，拖入文件或点击选择", fg="#e67e22")
+                    self.log_msg("LO 引擎未就绪，使用备用转换方式", "WARNING")
+                elif st == "progress":
+                    self.status.config(text="LO 引擎初始化中... %s" % msg, fg="#e67e22")
+            try:
+                self.after(0, _upd)
+            except tk.TclError:
+                pass
+
+        try:
+            _core_mod._init_listener(update_status)
+        except Exception as e:
+            update_status("error", str(e)[:50])
 
     def _build_ui(self):
         t1 = tk.Label(self, font=("Microsoft YaHei", 16, "bold"), bg="#f8f9fa", fg="#2c3e50")
-        t1["text"] = "试卷分割工具 v3.1"
+        t1["text"] = "试卷分割工具 v3.1.1"
         t1.pack(pady=(10, 0))
 
         mf = tk.Frame(self, bg="#f8f9fa"); mf.pack(pady=(8, 0))
@@ -423,21 +376,10 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         self.running = False
 
         _file_logger.info("="*50)
-        _file_logger.info("试卷分割工具 v3.1 启动")
+        _file_logger.info("试卷分割工具 v3.1.1 启动")
         _file_logger.info("="*50)
         self.set_mode_qa()
         self.update_idletasks()
-
-    def _start_init(self):
-        """弹出初始化对话框，后台启动 LO 监听器。"""
-        self.init_dlg = InitDialog(self, self._on_init_complete)
-
-    def _on_init_complete(self):
-        """初始化完成，显示主界面。"""
-        self._init_done = True
-        self.deiconify()
-        self.lift()
-        self.focus_force()
 
     def set_mode_qa(self):
         self.mode = "qa"
@@ -514,7 +456,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
             n = fn
             for suf in ["_题目","_答案","_提取","_1","_2","_3","_4","_5",".docx"]: n = n.replace(suf,"")
             import re as re2
-            return re2.sub(r'_\d+_\d+$','',n)
+            return re2.sub(r'_\\d+_\\d+$','',n)
         def refresh():
             for i in tree.get_children(): tree.delete(i)
             if not os.path.exists(BACKUP_DIR): return
@@ -593,7 +535,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         tk.Button(w,text="确定",font=("Microsoft YaHei",10),command=w.destroy,bg="#3498db",fg="white",relief=tk.RAISED,padx=20,pady=4,cursor="hand2").pack(pady=(0,15))
 
     def show_changelog(self):
-        self.quiet_msg("更新日志", "试卷分割工具 版本历史\n---\nv3.1.0  UNO API 管道转换，DOCX\u2192PDF 提速约40倍\nv3.0.0  架构重构: 统一PDF管道 + 备份管理器\nv2.1.0  扫描型PDF支持 + 多项修复\nv2.0.0  PDF分割模式\nv1.1.0  文件日志系统\nv1.0.0  初始版本")
+        self.quiet_msg("更新日志", "试卷分割工具 版本历史\n---\nv3.1.1  启动流程简化 + 闪退修复 + LO 自动恢复\nv3.1.0  UNO API 管道转换，DOCX\u2192PDF 提速约40倍\nv3.0.0  架构重构: 统一PDF管道 + 备份管理器\nv2.1.0  扫描型PDF支持 + 多项修复\nv2.0.0  PDF分割模式\nv1.1.0  文件日志系统\nv1.0.0  初始版本")
 
     def show_help(self):
         self.quiet_msg("使用说明",
@@ -654,4 +596,15 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
 
 
 if __name__ == "__main__":
-    App().mainloop()
+    _crash_log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crash.log")
+    try:
+        App().mainloop()
+    except Exception:
+        import traceback as _tb
+        import datetime as _dt
+        with open(_crash_log_path, "a", encoding="utf-8") as _f:
+            _f.write("=" * 50 + "\n")
+            _f.write(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n")
+            _tb.print_exc(file=_f)
+            _f.write("=" * 50 + "\n\n")
+        raise

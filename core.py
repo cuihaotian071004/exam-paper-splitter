@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-试卷分割工具 v3.1.0 — 核心处理模块
+试卷分割工具 v3.1.1 — 核心处理模块
 改用 UNO API 管道转换，DOCX→PDF 提速约 40 倍
 """
 import os, sys, shutil, re, time, subprocess, io, tempfile, json, atexit, socket
@@ -121,7 +121,7 @@ def process_pdf_split(src, ranges, log, master=None, keep_original=True):
 # ─── PDF processing (split questions/answers) ───────────
 
 def process_pdf(src, log, master=None):
-    base = re.sub(r'_\\d+_\\d+$', '', os.path.splitext(os.path.basename(src))[0])
+    base = re.sub(r'_\d+_\d+$', '', os.path.splitext(os.path.basename(src))[0])
     od = os.path.dirname(src)
     qp = os.path.join(od, base + "_题目.pdf")
     ap = os.path.join(od, base + "_答案.pdf")
@@ -133,7 +133,7 @@ def process_pdf(src, log, master=None):
             break
     if sp is None:
         for i in range(doc.page_count):
-            if re.search(r'(?:^|\n)\s*答案\s*(?:\n|$)', doc[i].get_text()):
+            if re.search(r'(?:^|\\n)\\s*答案\\s*(?:\\n|$)', doc[i].get_text()):
                 sp = i
                 break
     if sp is None:
@@ -289,17 +289,62 @@ def _get_lo_script():
     """获取 lo_convert.py 的绝对路径（与 core.py 同目录）。"""
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "lo_convert.py")
 
+def _try_reuse_listener(callback=None):
+    """尝试连接已有 LO 监听器（处理 crash 残留，旧 LO 仍在监听端口的情况）。"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.settimeout(1.0)
+        s.connect(("127.0.0.1", _LO_LISTENER_PORT))
+        s.close()
+        if callback: callback("done", "就绪 (复用已有)")
+        return True
+    except:
+        s.close()
+        return False
+
+def _is_port_in_use(port):
+    """检查端口是否被占用。"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.settimeout(0.3)
+        s.connect(("127.0.0.1", port))
+        s.close()
+        return True
+    except:
+        s.close()
+        return False
+
+def _cleanup_stale_lo():
+    """清理残留的 LibreOffice 进程（crash 后 soffice.exe 可能占着端口不释放）。"""
+    try:
+        subprocess.run(["taskkill", "/f", "/im", "soffice.exe"],
+                       capture_output=True, timeout=5)
+    except:
+        pass
+
 def _init_listener(callback=None):
     """启动 LO 监听器。callback(status, msg) 用于 GUI 进度显示。"""
     global _LO_LISTENER
+
+    # 1. 已有管理中的 LO 进程且存活
     if _LO_LISTENER and _LO_LISTENER.poll() is None:
         if callback: callback("done", "就绪")
+        return True
+
+    # 2. 尝试连接已有 LO 监听器（crash 残留但 LO 仍健康的）
+    if _try_reuse_listener(callback):
         return True
 
     soffice = _find_soffice()
     if not soffice:
         if callback: callback("error", "未找到 LibreOffice")
         return False
+
+    # 3. 端口被占但连接不上 → 有僵尸 LO 进程，清理掉
+    if _is_port_in_use(_LO_LISTENER_PORT):
+        if callback: callback("progress", "检测到残留进程，正在清理...")
+        _cleanup_stale_lo()
+        time.sleep(0.5)  # 等待端口释放
 
     if callback: callback("progress", "正在启动 LibreOffice 转换引擎...")
     _LO_LISTENER = subprocess.Popen(
@@ -409,7 +454,7 @@ def process_file(src, log, master=None):
     log("处理: " + os.path.basename(src))
     od = os.path.dirname(src)
     base = os.path.splitext(os.path.basename(src))[0]
-    base = re.sub(r'_\\d+_\\d+$', '', base)
+    base = re.sub(r'_\d+_\d+$', '', base)
     full_pdf = os.path.join(od, base + ".pdf")
     log("  DOCX → PDF 转换中...")
     if not _docx_to_single_pdf(src, full_pdf, log):
