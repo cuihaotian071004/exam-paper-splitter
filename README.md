@@ -3,7 +3,7 @@
 > 一键分离 DOCX/PDF 试卷中的题目与答案，保留图片/公式/表格，自动导出 PDF。
 
 [![GitHub](https://img.shields.io/badge/GitHub-cuihaotian071004-181717?logo=github)](https://github.com/cuihaotian071004/exam-paper-splitter)
-[![Version](https://img.shields.io/badge/version-3.1.0-orange)]()
+[![Version](https://img.shields.io/badge/version-3.2.0-orange)]()
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python)](https://python.org)
 [![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows)]()
 
@@ -99,8 +99,7 @@ pip install PyMuPDF tkinterdnd2
 ```
 exam-paper-splitter/
 ├── 试卷分割工具.pyw    # GUI 主程序 (Tkinter)
-├── core.py             # 核心处理逻辑 (v3.1.1)
-├── lo_convert.py       # LibreOffice UNO 转换脚本
+├── core.py             # 核心处理逻辑 (v3.2.0)
 ├── 试卷分割工具.bat     # 启动脚本
 ├── .gitignore
 ├── logs/               # 日志目录

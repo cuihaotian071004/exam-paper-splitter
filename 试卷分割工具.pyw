@@ -279,7 +279,7 @@ class SplitDialog:
 class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("试卷分割工具 v3.1.2")
+        self.title("试卷分割工具 v3.2.0")
         self.geometry("620x620")
         self.minsize(550, 520)
         self.configure(bg="#f8f9fa")
@@ -320,7 +320,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
 
     def _build_ui(self):
         t1 = tk.Label(self, font=("Microsoft YaHei", 16, "bold"), bg="#f8f9fa", fg="#2c3e50")
-        t1["text"] = "试卷分割工具 v3.1.2"
+        t1["text"] = "试卷分割工具 v3.2.0"
         t1.pack(pady=(10, 0))
 
         mf = tk.Frame(self, bg="#f8f9fa"); mf.pack(pady=(8, 0))
@@ -376,7 +376,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         self.running = False
 
         _file_logger.info("="*50)
-        _file_logger.info("试卷分割工具 v3.1.2 启动")
+        _file_logger.info("试卷分割工具 v3.2.0 启动")
         _file_logger.info("="*50)
         self.set_mode_qa()
         self.update_idletasks()
@@ -535,7 +535,7 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         tk.Button(w,text="确定",font=("Microsoft YaHei",10),command=w.destroy,bg="#3498db",fg="white",relief=tk.RAISED,padx=20,pady=4,cursor="hand2").pack(pady=(0,15))
 
     def show_changelog(self):
-        self.quiet_msg("更新日志", "试卷分割工具 版本历史\n---\nv3.1.1  启动流程简化 + 闪退修复 + LO 自动恢复\nv3.1.2  DOCX→PDF 改用直接 soffice（跳过 UNO 开销，提速 ~2x）\nv3.1.0  UNO API 管道转换，DOCX\u2192PDF 提速约40倍\nv3.0.0  架构重构: 统一PDF管道 + 备份管理器\nv2.1.0  扫描型PDF支持 + 多项修复\nv2.0.0  PDF分割模式\nv1.1.0  文件日志系统\nv1.0.0  初始版本")
+        self.quiet_msg("更新日志", "试卷分割工具 版本历史\n---\nv3.2.0  DOCX→PDF 改用 Word COM（速度 4.8x，输出小 60%，删 LO 依赖）\nv3.1.2  DOCX→PDF 改用直接 soffice（跳过 UNO 开销，提速 ~2x）\nv3.1.1  启动流程简化 + 闪退修复 + LO 自动恢复\nv3.1.0  UNO API 管道转换，DOCX→PDF 提速约40倍\nv3.0.0  架构重构: 统一PDF管道 + 备份管理器\nv2.1.0  扫描型PDF支持 + 多项修复\nv2.0.0  PDF分割模式\nv1.1.0  文件日志系统\nv1.0.0  初始版本")
 
     def show_help(self):
         self.quiet_msg("使用说明",
