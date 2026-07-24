@@ -315,30 +315,23 @@ atexit.register(_stop_word)
 # ─── DOCX→PDF 转换 ────────────────────────
 
 def _docx_to_single_pdf(docx_path, pdf_path, log):
-    """使用 Word COM 将 DOCX 转换为 PDF（常驻进程，首次慢后续快）。
+    """使用 Word COM 将 DOCX 转换为 PDF（每次独立实例，线程安全）。
     
     基准：4MB DOCX 导出 7s vs LO 32s，输出小 60%。
     """
-    global _WORD_APP
     import pythoncom
+    pythoncom.CoInitialize()
 
+    word = None
     try:
-        pythoncom.CoInitialize()
-
-        # 确保 Word 实例存在
-        if _WORD_APP is None:
-            try:
-                _WORD_APP = win32com.client.Dispatch("Word.Application")
-                _WORD_APP.Visible = False
-                _WORD_APP.DisplayAlerts = 0
-            except Exception as e:
-                log("Word 启动失败: %s" % e, "ERROR")
-                return False
+        word = win32com.client.Dispatch("Word.Application")
+        word.Visible = False
+        word.DisplayAlerts = 0
 
         abs_src = os.path.abspath(docx_path)
         abs_dst = os.path.abspath(pdf_path)
 
-        doc = _WORD_APP.Documents.Open(abs_src, ReadOnly=True)
+        doc = word.Documents.Open(abs_src, ReadOnly=True)
         doc.ExportAsFixedFormat(abs_dst, 17)  # 17 = wdExportFormatPDF
         doc.Close(SaveChanges=False)
 
@@ -346,13 +339,13 @@ def _docx_to_single_pdf(docx_path, pdf_path, log):
 
     except Exception as e:
         log("  转换失败: %s" % e, "ERROR")
-        # Word 实例可能挂了，重置以便下次重试
-        try:
-            _WORD_APP.Quit()
-        except:
-            pass
-        _WORD_APP = None
         return False
+    finally:
+        if word is not None:
+            try:
+                word.Quit()
+            except:
+                pass
 
 
 # ─── DOCX processing (convert to PDF then split) ────────
