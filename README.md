@@ -13,7 +13,7 @@
 
 **试卷分割工具**是一个 Windows 桌面工具，专为教育场景设计。它能够自动将 DOCX 或 PDF 格式的试卷按"参考答案"分界点，拆分为**题目**和**答案**两个独立的 PDF 文件。
 
-依托 LibreOffice UNO API 实现高效 DOCX→PDF 转换，比传统方法快约 40 倍。
+依托 Word COM 引擎实现高效 DOCX→PDF 转换，比 LibreOffice 快 4.8 倍，输出文件小 60%。
 
 ---
 
@@ -23,8 +23,7 @@
 |------|------|
 | 🎯 **自动分割** | 按"参考答案"关键词自动定位分界点 |
 | 🖼️ **完整保留** | 图片、公式、表格、排版全部保留 |
-| ⚡ **高速转换** | 基于 LibreOffice UNO API 管道，DOCX→PDF 提速 40 倍 |
-| 🔄 **降级保障** | UNO 失败时自动切换 soffice 直接转换 |
+| ⚡ **高速转换** | 基于 Word COM 引擎，DOCX→PDF 仅需 7s（4MB 文件） |
 | 🖨️ **扫描 PDF** | 支持扫描型 PDF，提供 GUI 滑块手动选择分割页 |
 | 🗑️ **空白页清理** | 自动删除输出 PDF 中的空白页 |
 | 🖱️ **拖拽支持** | 支持文件拖拽到窗口直接处理 |
@@ -38,13 +37,11 @@
 ### 前置依赖
 
 - **Python 3.11+**
-- **LibreOffice**（用于 DOCX→PDF 转换）
-  - 下载: [LibreOffice 官网](https://www.libreoffice.org/download/)
-  - 安装时选择"安装到本机"即可
+- **Microsoft Word**（用于 DOCX→PDF 转换，Office 2016+）
 - **Python 依赖包**
 
 ```bash
-pip install PyMuPDF tkinterdnd2
+pip install PyMuPDF pywin32 tkinterdnd2
 ```
 
 > `tkinterdnd2` 为可选项（提供拖拽支持），如不安装工具仍可正常使用。
@@ -53,7 +50,7 @@ pip install PyMuPDF tkinterdnd2
 
 双击 `试卷分割工具.bat` 或 `试卷分割工具.pyw` 即可启动。
 
-首次启动会自动检测 LibreOffice 并初始化转换引擎。
+首次启动会自动初始化 Word 引擎。
 
 ---
 
@@ -61,7 +58,7 @@ pip install PyMuPDF tkinterdnd2
 
 ### 基本流程
 
-1. **启动工具** → 自动初始化 LibreOffice 引擎
+1. **启动工具** → 自动初始化引擎
 2. **选择文件** — 点击"选择文件"或直接拖拽 DOCX/PDF 到窗口
 3. **自动处理** — 工具自动完成转换 → 分割 → 导出
 4. **获取结果** — 在源文件所在文件夹得到 `_题目.pdf` 和 `_答案.pdf`
@@ -70,7 +67,7 @@ pip install PyMuPDF tkinterdnd2
 
 | 格式 | 处理流程 |
 |------|----------|
-| **DOCX** | DOCX → PDF (UNO API) → 分割 → 输出 |
+| **DOCX** | DOCX → PDF (Word COM) → 分割 → 输出 |
 | **PDF** | PDF → 直接分割 → 输出 |
 | **扫描 PDF** | PDF → 手动选择分割页 → 输出 |
 
@@ -110,7 +107,7 @@ exam-paper-splitter/
 
 ## 技术原理
 
-1. **DOCX→PDF 转换**: 通过 UNO socket 连接 LibreOffice 监听器，调用 `writer_pdf_Export` 过滤器直接导出 PDF
+1. **DOCX→PDF 转换**: 通过 Word COM `ExportAsFixedFormat` 接口直接导出 PDF，使用 Word 原生渲染引擎，保证排版精确
 2. **分割定位**: 逐页扫描 PDF 文本内容，查找"参考答案"或独立的"答案"标题作为分界点
 3. **PDF 操作**: 使用 PyMuPDF (fitz) 进行页面提取、合并和空白页检测
 
@@ -126,7 +123,7 @@ exam-paper-splitter/
 
 - Auto-detect answer section boundary
 - Preserve images, formulas, and tables
-- LibreOffice UNO API pipeline for fast DOCX→PDF
+- Word COM engine for fast DOCX→PDF conversion
 - Scanned PDF support with manual page selector GUI
 - Auto-cleanup of empty pages
 - Drag-and-drop support
@@ -136,7 +133,7 @@ exam-paper-splitter/
 
 ```bash
 # Install dependencies
-pip install PyMuPDF tkinterdnd2
+pip install PyMuPDF pywin32 tkinterdnd2
 
 # Run
 python "试卷分割工具.pyw"
