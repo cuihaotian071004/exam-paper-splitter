@@ -284,30 +284,30 @@ class App(TkinterDnD.Tk if HAS_DND else tk.Tk):
         self.minsize(550, 520)
         self.configure(bg="#f8f9fa")
         self.mode = "qa"
-        self._lo_ready = False  # LO 引擎是否就绪
+        self._word_ready = False  # 引擎是否就绪
 
         self._build_ui()
-        # 主窗口直接显示，LO 引擎后台静默初始化，状态栏实时反馈
+        # 主窗口直接显示，引擎后台静默初始化，状态栏实时反馈
         self.progress.start(10)
-        self.status.config(text="LO 引擎初始化中...", fg="#e67e22")
-        threading.Thread(target=self._init_lo_bg, daemon=True).start()
+        self.status.config(text="引擎初始化中...", fg="#e67e22")
+        threading.Thread(target=self._init_engine_bg, daemon=True).start()
 
-    def _init_lo_bg(self):
-        """后台初始化 LO 监听器，通过 after 更新状态栏。"""
+    def _init_engine_bg(self):
+        """后台初始化引擎，通过 after 更新状态栏。"""
         def update_status(st, msg):
             """线程安全的 UI 更新。"""
             def _upd():
                 if st == "done":
-                    self._lo_ready = True
+                    self._word_ready = True
                     self.progress.stop()
                     self.status.config(text="就绪，拖入文件或点击选择", fg="#27ae60")
-                    self.log_msg("LO 引擎就绪")
+                    self.log_msg("引擎就绪")
                 elif st == "error":
                     self.progress.stop()
                     self.status.config(text="备用模式: 就绪，拖入文件或点击选择", fg="#e67e22")
-                    self.log_msg("LO 引擎未就绪，使用备用转换方式", "WARNING")
+                    self.log_msg("引擎未就绪，使用备用转换方式", "WARNING")
                 elif st == "progress":
-                    self.status.config(text="LO 引擎初始化中... %s" % msg, fg="#e67e22")
+                    self.status.config(text="引擎初始化中... %s" % msg, fg="#e67e22")
             try:
                 self.after(0, _upd)
             except tk.TclError:

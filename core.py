@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-试卷分割工具 v3.1.2 — 核心处理模块
-DOCX→PDF 改用直接 soffice 调用（复用常驻进程，跳过 LO Python 冷启动）
+试卷分割工具 v3.2.0 — 核心处理模块
+DOCX→PDF 使用 Word COM（速度 4.6x，输出文件小 60%），Word 进程常驻复用。
 """
-import os, sys, shutil, re, time, subprocess, io, tempfile, json, atexit, socket
+import os, sys, shutil, re, time, io, tempfile, json, atexit
+import win32com.client
 
 import fitz  # PyMuPDF
 
@@ -263,154 +264,95 @@ def _remove_empty_pages(pdf_path):
         d.close()
 
 
-# ─── LibreOffice 监听器管理 ─────────────────────
+# ─── Word COM 引擎管理 ─────────────────────
 
-_LO_LISTENER = None       # soffice 监听进程
-_LO_LISTENER_PORT = 2003  # UNO socket 端口
+_WORD_APP = None  # 常驻 Word COM 实例
 
-def _find_soffice():
-    """查找 LibreOffice 可执行文件路径。"""
-    for pf in [os.environ.get("ProgramFiles", ""),
-               os.environ.get("ProgramFiles(x86)", "")]:
-        p = os.path.join(pf, "LibreOffice", "program", "soffice.exe")
-        if os.path.exists(p):
-            return p
-    return None
-
-def _try_reuse_listener(callback=None):
-    """尝试连接已有 LO 监听器（处理 crash 残留，旧 LO 仍在监听端口的情况）。"""
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.settimeout(1.0)
-        s.connect(("127.0.0.1", _LO_LISTENER_PORT))
-        s.close()
-        if callback: callback("done", "就绪 (复用已有)")
-        return True
-    except:
-        s.close()
-        return False
-
-def _is_port_in_use(port):
-    """检查端口是否被占用。"""
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.settimeout(0.3)
-        s.connect(("127.0.0.1", port))
-        s.close()
-        return True
-    except:
-        s.close()
-        return False
-
-def _cleanup_stale_lo():
-    """清理残留的 LibreOffice 进程（crash 后 soffice.exe 可能占着端口不释放）。"""
-    try:
-        subprocess.run(["taskkill", "/f", "/im", "soffice.exe"],
-                       capture_output=True, timeout=5)
-    except:
-        pass
 
 def _init_listener(callback=None):
-    """启动 LO 监听器。callback(status, msg) 用于 GUI 进度显示。"""
-    global _LO_LISTENER
+    """初始化 Word COM 引擎（替代原 LO 监听器）。"""
+    global _WORD_APP
+    import pythoncom
 
-    # 1. 已有管理中的 LO 进程且存活
-    if _LO_LISTENER and _LO_LISTENER.poll() is None:
+    try:
+        pythoncom.CoInitialize()
+        if callback: callback("progress", "正在初始化 Word 引擎...")
+
+        if _WORD_APP is not None:
+            # 检查现有实例是否存活
+            try:
+                _ = _WORD_APP.Version
+                if callback: callback("done", "就绪")
+                return True
+            except:
+                _WORD_APP = None
+
+        _WORD_APP = win32com.client.Dispatch("Word.Application")
+        _WORD_APP.Visible = False
+        _WORD_APP.DisplayAlerts = 0
+
         if callback: callback("done", "就绪")
         return True
 
-    # 2. 尝试连接已有 LO 监听器（crash 残留但 LO 仍健康的）
-    if _try_reuse_listener(callback):
-        return True
-
-    soffice = _find_soffice()
-    if not soffice:
-        if callback: callback("error", "未找到 LibreOffice")
+    except Exception as e:
+        if callback: callback("error", str(e)[:50])
         return False
 
-    # 3. 端口被占但连接不上 → 有僵尸 LO 进程，清理掉
-    if _is_port_in_use(_LO_LISTENER_PORT):
-        if callback: callback("progress", "检测到残留进程，正在清理...")
-        _cleanup_stale_lo()
-        time.sleep(0.5)  # 等待端口释放
 
-    if callback: callback("progress", "正在启动 LibreOffice 转换引擎...")
-    _LO_LISTENER = subprocess.Popen(
-        [soffice, "--headless", "--accept=socket,host=localhost,port=%d;urp;" % _LO_LISTENER_PORT],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    # 等待 LO 就绪（最多 8 秒）
-    for i in range(40):
-        time.sleep(0.2)
-        if _LO_LISTENER.poll() is not None:
-            if callback: callback("error", "LibreOffice 启动失败")
-            _LO_LISTENER = None
-            return False
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+def _stop_word():
+    """关闭 Word COM 实例。"""
+    global _WORD_APP
+    if _WORD_APP is not None:
         try:
-            s.settimeout(0.5)
-            s.connect(("127.0.0.1", _LO_LISTENER_PORT))
-            s.close()
-            if callback: callback("done", "就绪")
-            return True
+            _WORD_APP.Quit()
         except:
-            s.close()
-        if callback:
-            pct = min(90, int((i+1) / 40 * 90))
-            callback("progress", "正在初始化... %d%%" % pct)
+            pass
+        _WORD_APP = None
 
-    if callback: callback("done", "就绪")
-    return True
 
-def _stop_listener():
-    """关闭 LO 监听器。"""
-    global _LO_LISTENER
-    if _LO_LISTENER and _LO_LISTENER.poll() is None:
-        _LO_LISTENER.terminate()
-        try:
-            _LO_LISTENER.wait(timeout=5)
-        except:
-            try:
-                _LO_LISTENER.kill()
-            except:
-                pass
-    _LO_LISTENER = None
-
-atexit.register(_stop_listener)
+atexit.register(_stop_word)
 
 # ─── DOCX→PDF 转换 ────────────────────────
 
 def _docx_to_single_pdf(docx_path, pdf_path, log):
-    """将 DOCX 直接转换为 PDF（复用常驻 soffice 进程，跳过 UNO/LO Python 开销）。
+    """使用 Word COM 将 DOCX 转换为 PDF（常驻进程，首次慢后续快）。
     
-    v3.1.2: 基准测试 — 36KB DOCX 耗时 ~0.5s (直接 soffice) vs ~1.5s (UNO 管道)。
+    基准：4MB DOCX 导出 7s vs LO 32s，输出小 60%。
     """
-    soffice = _find_soffice()
-    if not soffice:
-        log("LibreOffice 未安装", "ERROR")
-        return False
+    global _WORD_APP
+    import pythoncom
 
-    outdir = os.path.dirname(pdf_path)
-    tmpdir = tempfile.mkdtemp(prefix="lo_")
     try:
-        # 用目标 PDF 名作为临时 DOCX 名，soffice 生成同名 PDF 到 outdir
-        tmp_docx = os.path.join(tmpdir, os.path.basename(pdf_path).replace(".pdf", ".docx"))
-        shutil.copy2(docx_path, tmp_docx)
+        pythoncom.CoInitialize()
 
-        cmd = [soffice, "--headless", "--norestore",
-               "--convert-to", "pdf", "--outdir", outdir, tmp_docx]
-        proc = subprocess.run(cmd, capture_output=True, timeout=120)
+        # 确保 Word 实例存在
+        if _WORD_APP is None:
+            try:
+                _WORD_APP = win32com.client.Dispatch("Word.Application")
+                _WORD_APP.Visible = False
+                _WORD_APP.DisplayAlerts = 0
+            except Exception as e:
+                log("Word 启动失败: %s" % e, "ERROR")
+                return False
 
-        expected = os.path.join(outdir, os.path.basename(pdf_path))
-        return proc.returncode == 0 and os.path.exists(expected)
-    except subprocess.TimeoutExpired:
-        log("  转换超时 (120秒)", "ERROR")
-        return False
+        abs_src = os.path.abspath(docx_path)
+        abs_dst = os.path.abspath(pdf_path)
+
+        doc = _WORD_APP.Documents.Open(abs_src, ReadOnly=True)
+        doc.ExportAsFixedFormat(abs_dst, 17)  # 17 = wdExportFormatPDF
+        doc.Close(SaveChanges=False)
+
+        return os.path.exists(abs_dst)
+
     except Exception as e:
         log("  转换失败: %s" % e, "ERROR")
+        # Word 实例可能挂了，重置以便下次重试
+        try:
+            _WORD_APP.Quit()
+        except:
+            pass
+        _WORD_APP = None
         return False
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 # ─── DOCX processing (convert to PDF then split) ────────
